@@ -10,11 +10,15 @@ NestJS + Prisma (PostgreSQL) + Redis backend for ride-hailing driver allocation.
    ```bash
    docker compose up -d
    ```
-2. Install dependencies:
+2. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+3. Install dependencies:
    ```bash
    npm install
    ```
-3. Create `backend/.env`:
+4. Create `backend/.env` (or `.env` inside the `backend` directory):
 
    ```env
    DATABASE_URL=postgresql://postgres:postgres@localhost:5433/template1
@@ -28,15 +32,15 @@ NestJS + Prisma (PostgreSQL) + Redis backend for ride-hailing driver allocation.
    ALLOCATION_TIMEOUT_MS=15000
    ```
 
-4. Apply migrations:
+5. Apply migrations:
    ```bash
    npx prisma migrate deploy
    ```
-5. (Optional) seed sample drivers/riders:
+6. (Optional) seed sample drivers/riders:
    ```bash
    npm run db:seed
    ```
-6. Run the server:
+7. Run the server:
    ```bash
    npm run start:dev
    ```
@@ -52,7 +56,7 @@ To run the frontend:
 
 1. Navigate to the frontend directory:
    ```bash
-   cd ../frontend
+   cd frontend
    ```
 2. Install dependencies:
    ```bash

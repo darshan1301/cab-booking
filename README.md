@@ -100,4 +100,95 @@ npm run test:e2e
 > [!IMPORTANT]
 > The E2E tests automatically clear the database tables and Redis keys before each test case to ensure test isolation.
 
+## Architecture & Flow Diagrams
 
+### Ride Acceptance: Concurrency, Idempotency, and Redis Locking Flow
+
+The following ASCII diagram illustrates the flow when two drivers concurrently try to accept the same ride request. It highlights the role of the Redis distributed lock (`SET NX PX`), idempotency check (handling retries), and transactional state transitions in preventing double-allocation:
+
+```
+                  Driver A (accepts Ride 123)            Driver B (accepts Ride 123)
+                              |                                      |
+                              v                                      v
+                      [ POST .../accept ]                    [ POST .../accept ]
+                              |                                      |
+                              +-------------------+------------------+
+                                                  |
+                                                  v
+                                   +-----------------------------+
+                                   |  Acquire Redis Mutex Lock   |
+                                   |  Key: `ride:lock:123`       |
+                                   |  Using SET NX PX            |
+                                   +--------------+--------------+
+                                                  |
+                            +---------------------+---------------------+
+                            | (Lock acquired by Driver A first)         | (Driver B fails to acquire lock,
+                            |                                           |  spins/retries up to 10 times)
+                            v                                           v
+                  +-----------------------------------+        +-----------------------------------+
+                  |          [ DRIVER A ]             |        |          [ DRIVER B ]             |
+                  |  Fetch Ride 123 & Driver A records|        |           Spinning...             |
+                  +-----------------+-----------------+        +-----------------+-----------------+
+                                    |                                            |
+                                    v                                            |
+                         /---------------------\                                 |
+                        / Is assignedDriverId   \    Yes (Idempotent call)       |
+                       <  equal to Driver A ID?  >-------------------+           |
+                        \                       /                    |           |
+                         \---------------------/                     v           |
+                                    | No                      [ Return Success ] |
+                                    v                         [ (Already Yours) ]|
+                         /---------------------\                                 |
+                        /  Is ride ASSIGNED or  \    Yes                         |
+                       <   assignedDriverId set  >-------------------+           |
+                        \  to someone else?     /                    |           |
+                         \---------------------/                     v           |
+                                    | No                      [ Return 409 ]     |
+                                    v                         [ Conflict Error ] |
+                         /---------------------\                                 |
+                        / Is Driver A status    \    No                          |
+                       <  equal to AVAILABLE?    >-------------------+           |
+                        \                       /                    |           |
+                         \---------------------/                     v           |
+                                    | Yes                     [ Return 400 ]     |
+                                    v                         [ Bad Request ]    |
+                         /---------------------\                                 |
+                        / Is Driver A in active \    No                          |
+                       <  equal to batch & not   >-------------------+           |
+                        \  expired?             /                    |           |
+                         \---------------------/                     v           |
+                                    | Yes                     [ Return 400 ]     |
+                                    v                         [ Bad Request ]    |
+                  +-----------------------------------+                          |
+                  |      Apply Updates Atomically     |                          |
+                  | 1. Ride State -> ASSIGNED         |                          |
+                  | 2. assignedDriverId -> Driver A   |                          |
+                  | 3. Driver A Status -> BUSY        |                          |
+                  | 4. Remove Driver A from Redis geo |                          |
+                  +-----------------+-----------------+                          |
+                                    |                                            |
+                                    v                                            |
+                         +--------------------+                                  |
+                         | Release Redis Lock |                                  |
+                         | Delete: `lock:123` |                                  |
+                         +----------+---------+                                  |
+                                    |                                            |
+                                    v                                            |
+                       [ Return Assignment Success ]                             |
+                                                                                 |
+                                                                                 v
+                                                               (Driver B acquires lock after A releases it)
+                                                                                 |
+                                                                                 v
+                                                                       +-------------------+
+                                                                       |   [ DRIVER B ]    |
+                                                                       | Fetch Ride & B DB |
+                                                                       +---------+---------+
+                                                                                 |
+                                                                                 v
+                                                                      /---------------------\
+                                                                     /  Is ride ASSIGNED or  \   Yes
+                                                                    <   assignedDriverId set  >------> [ Return 409 Conflict ]
+                                                                     \  to someone else?     /         [ (Assigned to A) ]
+                                                                      \---------------------/
+```

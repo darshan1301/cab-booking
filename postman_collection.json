@@ -1,0 +1,232 @@
+{
+  "info": {
+    "name": "Cab Backend API",
+    "description": "Postman collection for the Cab backend (NestJS). Covers Health, Drivers, and Rides endpoints. No authentication is required by any endpoint.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "5c0b6b3a-6f3a-4a2a-9b0e-cab-backend-0001"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "driverId",
+      "value": "",
+      "type": "string",
+      "description": "Set this after creating a driver (POST /api/drivers) to reuse it in later requests."
+    },
+    {
+      "key": "rideId",
+      "value": "",
+      "type": "string",
+      "description": "Set this after creating a ride (POST /api/rides) to reuse it in later requests."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Get Health Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns database and redis connectivity status. Returns 500 if unhealthy."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Drivers",
+      "item": [
+        {
+          "name": "Create Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "drivers"]
+            },
+            "description": "Creates a driver with status OFFLINE by default."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json && json.id) {",
+                  "        pm.collectionVariables.set('driverId', json.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List Drivers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "drivers"]
+            },
+            "description": "Returns all drivers, each merged with current location (lat/lng) from Redis, or null if not set."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Driver Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers/{{driverId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "drivers", "{{driverId}}", "status"]
+            },
+            "description": "status must be one of: AVAILABLE, BUSY, OFFLINE. Setting to anything other than AVAILABLE removes the driver from the Redis location index."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Driver Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 12.9716,\n  \"lng\": 77.5946\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers/{{driverId}}/location",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "drivers", "{{driverId}}", "location"]
+            },
+            "description": "Updates the driver's geo-location in Redis (GEOADD)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Rides",
+      "item": [
+        {
+          "name": "Create Ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"riderName\": \"Jane Smith\",\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rides"]
+            },
+            "description": "Creates a ride, searches Redis for nearby AVAILABLE drivers (10km radius, top 5), and schedules an allocation timeout retry."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json && json.ride && json.ride.id) {",
+                  "        pm.collectionVariables.set('rideId', json.ride.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Ride By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rides", "{{rideId}}"]
+            },
+            "description": "Returns the ride including its assignedDriver relation. 404 if not found."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Ride Candidate Drivers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/drivers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rides", "{{rideId}}", "drivers"]
+            },
+            "description": "Returns the latest attempt's candidate driver batch, enriched with location and distanceKm, sorted nearest-first. 404 if ride not found."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driverId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/accept",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rides", "{{rideId}}", "accept"]
+            },
+            "description": "Driver accepts the ride. Uses a Redis lock; may respond 404 (ride/driver not found), 409 (already assigned / lock conflict), or 400 (invalid state / late acceptance) on failure."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

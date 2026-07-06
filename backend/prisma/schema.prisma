@@ -1,0 +1,63 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Driver {
+  id     String       @id @default(cuid())
+  name   String
+  status DriverStatus
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  rides     Ride[]
+}
+
+enum DriverStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+model Ride {
+  id String @id @default(cuid())
+
+  riderName String
+
+  pickupLat Float
+  pickupLng Float
+
+  state RideState
+
+  assignedDriverId String?
+
+  assignedDriver Driver?  @relation(fields: [assignedDriverId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+enum RideState {
+  REQUESTED
+  SEARCHING
+  ASSIGNED
+  TIMEOUT
+}
+
+model RideAttempt {
+  id        String   @id @default(cuid())
+  rideId    String
+  batch     Int
+  driverIds Json
+  timeoutAt DateTime
+  createdAt DateTime @default(now())
+}
